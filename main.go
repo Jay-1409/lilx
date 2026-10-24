@@ -68,30 +68,20 @@ func main() {
 	}
 	a := &app{client: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, backend: backend, model: model,
 		modelKey: os.Getenv("GEMINI_API_KEY"), backendAuth: os.Getenv("LILX_BACKEND_AUTHORIZATION"), apiKey: os.Getenv("LILX_API_KEY")}
-	if a.modelKey == "" || a.apiKey == "" {
-		log.Fatal("GEMINI_API_KEY and LILX_API_KEY are required")
+	if a.modelKey == "" {
+		log.Fatal("GEMINI_API_KEY is required")
 	}
 	a.operations, err = loadOperations(context.Background(), a.client, specURL, os.Getenv("LILX_OPENAPI_AUTHORIZATION"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	allowed := strings.TrimSpace(os.Getenv("LILX_ALLOWED_OPERATIONS"))
-	if allowed == "" {
-		log.Fatal("LILX_ALLOWED_OPERATIONS must list approved operation IDs")
+	a.operations, err = approvedOperations(a.operations, os.Getenv("LILX_ALLOWED_OPERATIONS"))
+	if err != nil {
+		log.Fatal(err)
 	}
-	approved := make(map[string]operation)
-	for _, id := range strings.Split(allowed, ",") {
-		id = strings.TrimSpace(id)
-		op, ok := a.operations[id]
-		if !ok {
-			log.Fatalf("approved operation %q is absent from the spec", id)
-		}
-		approved[id] = op
-	}
-	a.operations = approved
 	addr := os.Getenv("LILX_LISTEN_ADDR")
 	if addr == "" {
-		addr = ":8080"
+		addr = "127.0.0.1:8080"
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/operations", a.authorize(a.listOperations))
@@ -103,12 +93,32 @@ func main() {
 
 func (a *app) authorize(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+a.apiKey {
+		if a.apiKey != "" && r.Header.Get("Authorization") != "Bearer "+a.apiKey {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func approvedOperations(available map[string]operation, allowed string) (map[string]operation, error) {
+	allowed = strings.TrimSpace(allowed)
+	if allowed == "*" {
+		return available, nil
+	}
+	if allowed == "" {
+		return nil, errors.New("LILX_ALLOWED_OPERATIONS must be * or a list of operation IDs")
+	}
+	approved := make(map[string]operation)
+	for _, id := range strings.Split(allowed, ",") {
+		id = strings.TrimSpace(id)
+		op, ok := available[id]
+		if !ok {
+			return nil, fmt.Errorf("approved operation %q is absent from the spec", id)
+		}
+		approved[id] = op
+	}
+	return approved, nil
 }
 
 func (a *app) listOperations(w http.ResponseWriter, _ *http.Request) {

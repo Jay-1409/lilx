@@ -19,13 +19,13 @@ go run .
 | --- | --- |
 | `LILX_BACKEND_URL` | Backend base URL, such as `http://127.0.0.1:9000` |
 | `LILX_OPENAPI_URL` | URL of the backend's OpenAPI 3.x JSON or YAML spec |
-| `LILX_ALLOWED_OPERATIONS` | Comma-separated OpenAPI `operationId` values approved for lilx |
-| `LILX_API_KEY` | Bearer token required from lilx callers |
+| `LILX_ALLOWED_OPERATIONS` | `*` for every supported GET operation, or comma-separated approved `operationId` values |
+| `LILX_API_KEY` | Optional caller bearer token; blank disables lilx caller authentication |
 | `GEMINI_API_KEY` | Server-side key for Google Generative Language |
 | `LILX_BACKEND_AUTHORIZATION` | Optional complete `Authorization` header sent to the backend |
 | `LILX_OPENAPI_AUTHORIZATION` | Optional complete `Authorization` header used to fetch the spec |
 | `LILX_MODEL` | Optional: `gemma-4-26b-a4b-it` (default) or `gemma-4-31b-it` |
-| `LILX_LISTEN_ADDR` | Optional listen address (default `:8080`) |
+| `LILX_LISTEN_ADDR` | Optional listen address (default `127.0.0.1:8080`) |
 
 The spec URL and backend URL are operator-controlled startup settings. A caller cannot change them through a prompt. An OpenAPI GET operation without an `operationId` is named `GET /its/path` for allowlisting.
 
@@ -47,7 +47,7 @@ The spec URL and backend URL are operator-controlled startup settings. A caller 
 }
 ```
 
-Send `Authorization: Bearer <LILX_API_KEY>` to both product endpoints. A successful response contains `data` in the requested shape and a separate `trace` with selected operation IDs and HTTP statuses. Invalid plans, upstream failures, and output that does not match the schema return errors.
+When `LILX_API_KEY` is set, send `Authorization: Bearer <LILX_API_KEY>` to both product endpoints. When it is blank, no caller token is required; keep the listener on `127.0.0.1` unless you intend to expose it. A successful response contains `data` in the requested shape and a separate `trace` with selected operation IDs and HTTP statuses. Invalid plans, upstream failures, and output that does not match the schema return errors.
 
 ## Test Gemma with Bruno
 

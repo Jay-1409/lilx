@@ -131,6 +131,37 @@ func TestGemmaTestEndpoint(t *testing.T) {
 	}
 }
 
+func TestApprovedOperationsWildcard(t *testing.T) {
+	available := map[string]operation{"getOrder": {ID: "getOrder"}, "listOrders": {ID: "listOrders"}}
+	approved, err := approvedOperations(available, "*")
+	if err != nil || len(approved) != 2 {
+		t.Fatalf("wildcard selection: %v, %+v", err, approved)
+	}
+	approved, err = approvedOperations(available, "getOrder")
+	if err != nil || len(approved) != 1 {
+		t.Fatalf("explicit selection: %v, %+v", err, approved)
+	}
+	if _, err := approvedOperations(available, "missing"); err == nil {
+		t.Fatal("unknown operation was accepted")
+	}
+}
+
+func TestCallerAuthCanBeDisabled(t *testing.T) {
+	a := &app{}
+	r := httptest.NewRequest(http.MethodGet, "/v1/operations", nil)
+	w := httptest.NewRecorder()
+	a.authorize(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })(w, r)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("blank API key rejected request: %d", w.Code)
+	}
+	a.apiKey = "secret"
+	w = httptest.NewRecorder()
+	a.authorize(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("configured API key accepted request without token: %d", w.Code)
+	}
+}
+
 func testApp(t *testing.T, transport http.RoundTripper) *app {
 	t.Helper()
 	u, err := url.Parse("http://backend.test")
