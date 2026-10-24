@@ -11,13 +11,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-const maxCalls = 4
+const maxCalls = 10
 
 type app struct {
 	client      *http.Client
@@ -28,6 +29,7 @@ type app struct {
 	modelKey    string
 	backendAuth string
 	apiKey      string
+	jobs        chan backendJob
 }
 
 type request struct {
@@ -79,6 +81,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	workers := 10
+	if value := os.Getenv("LILX_WORKERS"); value != "" {
+		workers, err = strconv.Atoi(value)
+		if err != nil || workers < 1 || workers > 100 {
+			log.Fatal("LILX_WORKERS must be an integer from 1 to 100")
+		}
+	}
+	a.startWorkers(workers)
 	addr := os.Getenv("LILX_LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"
@@ -87,7 +97,7 @@ func main() {
 	mux.HandleFunc("GET /v1/operations", a.authorize(a.listOperations))
 	mux.HandleFunc("POST /v1/requests", a.authorize(a.handleRequest))
 	mux.HandleFunc("POST /v1/gemma/test", a.authorize(a.testGemma))
-	log.Printf("lilx listening on %s with %d approved operations", addr, len(a.operations))
+	log.Printf("lilx listening on %s with %d approved operations and %d backend workers", addr, len(a.operations), workers)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
@@ -203,24 +213,19 @@ func (a *app) handleRequest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid operation plan"})
 		return
 	}
-	results := make([]callResult, 0, len(plan.Calls))
-	trace := make([]traceCall, 0, len(plan.Calls))
 	for _, call := range plan.Calls {
-		op, ok := a.operations[call.OperationID]
-		if !ok {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": "plan selected an unapproved operation", "trace": trace})
+		if _, ok := a.operations[call.OperationID]; !ok {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": "plan selected an unapproved operation", "trace": []traceCall{}})
 			return
 		}
-		data, status, err := a.callBackend(ctx, op, call.Parameters)
-		trace = append(trace, traceCall{OperationID: op.ID, Status: status})
-		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": "backend call failed: " + err.Error(), "trace": trace})
-			return
-		}
-		results = append(results, callResult{OperationID: op.ID, Data: data})
 	}
-	if len(results) == 0 {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "no approved operation can answer this request", "trace": trace})
+	if len(plan.Calls) == 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "no approved operation can answer this request", "trace": []traceCall{}})
+		return
+	}
+	results, trace, err := a.runCalls(ctx, plan.Calls)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "backend call failed: " + err.Error(), "trace": trace})
 		return
 	}
 	resultJSON, _ := json.Marshal(results)

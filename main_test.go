@@ -168,5 +168,8 @@ func testApp(t *testing.T, transport http.RoundTripper) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &app{client: &http.Client{Transport: transport}, backend: u, modelURL: "http://model.test", modelKey: "model-secret", backendAuth: "Bearer backend", apiKey: "caller-secret", operations: map[string]operation{"getOrder": {ID: "getOrder", Path: "/orders/{id}", Parameters: []parameter{{Name: "id", In: "path", Required: true}}}}}
+	a := &app{client: &http.Client{Transport: transport}, backend: u, modelURL: "http://model.test", modelKey: "model-secret", backendAuth: "Bearer backend", apiKey: "caller-secret", operations: map[string]operation{"getOrder": {ID: "getOrder", Path: "/orders/{id}", Parameters: []parameter{{Name: "id", In: "path", Required: true}}}}}
+	a.startWorkers(2)
+	t.Cleanup(func() { close(a.jobs) })
+	return a
 }

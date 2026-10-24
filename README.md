@@ -25,6 +25,7 @@ go run .
 | `LILX_BACKEND_AUTHORIZATION` | Optional complete `Authorization` header sent to the backend |
 | `LILX_OPENAPI_AUTHORIZATION` | Optional complete `Authorization` header used to fetch the spec |
 | `LILX_MODEL` | Optional: `gemma-4-26b-a4b-it` (default) or `gemma-4-31b-it` |
+| `LILX_WORKERS` | Backend call workers shared across requests (default `10`, range `1`–`100`) |
 | `LILX_LISTEN_ADDR` | Optional listen address (default `127.0.0.1:8080`) |
 
 The spec URL and backend URL are operator-controlled startup settings. A caller cannot change them through a prompt. An OpenAPI GET operation without an `operationId` is named `GET /its/path` for allowlisting.
@@ -53,4 +54,4 @@ When `LILX_API_KEY` is set, send `Authorization: Bearer <LILX_API_KEY>` to both 
 
 Open the [`bruno`](bruno) folder as a Bruno collection and select the `local` environment. Set the secret `lilxApiKey` in Bruno to the same value as the server's `LILX_API_KEY`, then run **Gemma test**. The request calls `POST /v1/gemma/test` with a short prompt; the response is `{"text":"..."}`. The server uses its configured Gemma model and `GEMINI_API_KEY`, so the Google key never enters the Bruno collection. This test endpoint requires the same bearer token as the other lilx endpoints.
 
-The current execution boundary supports inline path and query parameters on approved GET operations, at most four calls per request, JSON backend responses up to 1 MiB, and a 45-second request deadline. OpenAPI `$ref` parameters and write operations are not supported yet. Backend credentials stay on the server. lilx sends selected backend JSON to the configured Gemma endpoint to compose the response; only connect data sources appropriate for that processing. The schema check verifies shape and types, not whether model-written statements are fully supported by the backend data. Review the trace before treating generated summaries as authoritative.
+The current execution boundary supports inline path and query parameters on approved GET operations, at most ten calls per request, JSON backend responses up to 1 MiB, and a 45-second request deadline. Backend calls run concurrently through a shared pool of `LILX_WORKERS` goroutines; lilx waits for all selected calls before composing the result. OpenAPI `$ref` parameters and write operations are not supported yet. Backend credentials stay on the server. lilx sends selected backend JSON to the configured Gemma endpoint to compose the response; only connect data sources appropriate for that processing. The schema check verifies shape and types, not whether model-written statements are fully supported by the backend data. Review the trace before treating generated summaries as authoritative.
