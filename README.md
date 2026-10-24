@@ -2,6 +2,8 @@
 
 lilx is an HTTP service that turns a natural-language data request into approved backend API calls. It reads an OpenAPI 3.x spec at startup, exposes the approved GET operations, asks Gemma 4 to choose calls, fetches their JSON responses, and returns data validated against the caller's JSON Schema.
 
+For local integration testing, run the dependency-free [test backend](test-backend/README.md), which exposes ten sample APIs and an OpenAPI spec.
+
 ## Configure
 
 Set these environment variables before starting the server. A local `.env` is provided; fill it in, then load it in your shell and run lilx:
