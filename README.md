@@ -18,6 +18,9 @@
 - Returns a JSON object checked against your JSON Schema.
 - Keeps the call trace separate from your requested data.
 
+## Doodle
+![doodle](./assets/diagram1.svg)
+
 ## Quick Start
 
 Install Go 1.25.6 or newer and Node.js. Set a valid Google Generative Language API key in your shell. The key stays on the server.
