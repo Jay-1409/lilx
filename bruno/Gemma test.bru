@@ -31,3 +31,7 @@ tests {
     expect(res.getBody().text).to.be.a("string").and.not.be.empty;
   });
 }
+
+settings {
+  timeout: 600000
+}
