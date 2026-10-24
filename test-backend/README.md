@@ -6,7 +6,7 @@ Small, dependency-free Node.js server with ten read-only JSON APIs and an OpenAP
 node test-backend/server.js
 ```
 
-It listens on `127.0.0.1:9000` by default. Set `PORT` to use another port. The spec is at `http://127.0.0.1:9000/openapi.json`.
+It listens on `127.0.0.1:9000` by default. Set `PORT` to use another port. The checked-in [OpenAPI spec](openapi.json) is served at `http://127.0.0.1:9000/openapi.json` and describes parameters and response fields for all ten operations.
 
 | Endpoint | Operation ID | Purpose |
 | --- | --- | --- |

@@ -1,4 +1,5 @@
 const http = require('node:http');
+const spec = require('./openapi.json');
 
 const customers = [
   { id: 'cus_1', name: 'Northstar Books', tier: 'enterprise' },
@@ -39,23 +40,6 @@ const routes = [
     return { total_orders: orders.length, failed_orders: failed, order_error_rate_percent: failed / orders.length * 100 };
   } },
 ];
-
-const spec = {
-  openapi: '3.0.3',
-  info: { title: 'lilx test backend', version: '1.0.0', description: 'Deterministic sample data for local integration testing.' },
-  paths: Object.fromEntries(routes.map(route => [route.path, { get: {
-    operationId: route.id,
-    summary: route.summary,
-    parameters: [
-      ...(route.path.includes('{id}') ? [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }] : []),
-      ...(route.query || []).map(name => ({ name, in: 'query', schema: { type: 'string' } })),
-    ],
-    responses: {
-      200: { description: 'JSON result', content: { 'application/json': { schema: { type: route.path.includes('{id}') || route.path === '/metrics/checkout' ? 'object' : 'array' } } } },
-      ...(route.path.includes('{id}') ? { 404: { description: 'Not found' } } : {}),
-    },
-  } }])),
-};
 
 function createServer() {
   return http.createServer((req, res) => {
