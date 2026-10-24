@@ -50,8 +50,10 @@ The spec URL and backend URL are operator-controlled startup settings. A caller 
 
 When `LILX_API_KEY` is set, send `Authorization: Bearer <LILX_API_KEY>` to both product endpoints. When it is blank, no caller token is required; keep the listener on `127.0.0.1` unless you intend to expose it. A successful response contains `data` in the requested shape and a separate `trace` with selected operation IDs and HTTP statuses. Invalid plans, upstream failures, and output that does not match the schema return errors.
 
-## Test Gemma with Bruno
+## Test with Bruno
 
 Open the [`bruno`](bruno) folder as a Bruno collection and select the `local` environment. Set the secret `lilxApiKey` in Bruno to the same value as the server's `LILX_API_KEY`, then run **Gemma test**. The request calls `POST /v1/gemma/test` with a short prompt; the response is `{"text":"..."}`. The server uses its configured Gemma model and `GEMINI_API_KEY`, so the Google key never enters the Bruno collection. This test endpoint requires the same bearer token as the other lilx endpoints.
+
+To test the product flow, start the [test backend](test-backend/README.md), configure lilx to use its OpenAPI URL and approve `listTickets`, `getCheckoutMetrics`, and `listIncidents` (or `*`), then run **Checkout impact** in Bruno. It calls `POST /v1/requests`; lilx selects the relevant backend operations and returns the requested data plus a call trace. The backend values are fixed samples for local testing.
 
 The current execution boundary supports inline path and query parameters on approved GET operations, at most ten calls per request, JSON backend responses up to 1 MiB, and a 45-second request deadline. Backend calls run concurrently through a shared pool of `LILX_WORKERS` goroutines; lilx waits for all selected calls before composing the result. OpenAPI `$ref` parameters and write operations are not supported yet. Backend credentials stay on the server. lilx sends selected backend JSON to the configured Gemma endpoint to compose the response; only connect data sources appropriate for that processing. The schema check verifies shape and types, not whether model-written statements are fully supported by the backend data. Review the trace before treating generated summaries as authoritative.
