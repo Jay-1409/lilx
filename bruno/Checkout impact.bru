@@ -1,0 +1,70 @@
+meta {
+  name: Checkout impact
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v1/requests
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{lilxApiKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nlp_data_required": "Which open support tickets concern checkout failures? For each matching ticket, give its ID, subject, and linked order ID. Also give the checkout order error rate and the IDs and titles of any active checkout incidents. Use only data returned by the available APIs.",
+    "response_format": {
+      "type": "object",
+      "properties": {
+        "open_checkout_tickets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "subject": { "type": "string" },
+              "order_id": { "type": "string" }
+            },
+            "required": ["id", "subject", "order_id"],
+            "additionalProperties": false
+          }
+        },
+        "order_error_rate_percent": { "type": "number" },
+        "active_checkout_incidents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            },
+            "required": ["id", "title"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["open_checkout_tickets", "order_error_rate_percent", "active_checkout_incidents"],
+      "additionalProperties": false
+    }
+  }
+}
+
+settings {
+  timeout: 600000
+}
+
+tests {
+  test("Product request returns shaped data and a call trace", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.data.open_checkout_tickets).to.be.an("array");
+    expect(body.data.order_error_rate_percent).to.be.a("number");
+    expect(body.data.active_checkout_incidents).to.be.an("array");
+    expect(body.trace).to.be.an("array").that.is.not.empty;
+  });
+}

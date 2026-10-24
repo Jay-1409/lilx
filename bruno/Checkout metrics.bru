@@ -1,0 +1,64 @@
+meta {
+  name: Checkout metrics
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/requests
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{lilxApiKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nlp_data_required": "Get the current checkout metrics using getCheckoutMetrics. Return total_orders, failed_orders, and order_error_rate_percent exactly as supplied by that API. Use only the returned backend values.",
+    "response_format": {
+      "type": "object",
+      "properties": {
+        "total_orders": { "type": "integer" },
+        "failed_orders": { "type": "integer" },
+        "order_error_rate_percent": { "type": "number" }
+      },
+      "required": ["total_orders", "failed_orders", "order_error_rate_percent"],
+      "additionalProperties": false
+    }
+  }
+}
+
+vars:pre-request {
+  baseUrl: http://localhost:8080
+}
+
+tests {
+  test("Returns HTTP 200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Matches the bundled sample backend metrics", function () {
+    expect(res.getBody().data).to.deep.equal({
+      total_orders: 4,
+      failed_orders: 2,
+      order_error_rate_percent: 50
+    });
+  });
+
+  test("Successfully calls the checkout metrics API", function () {
+    const trace = res.getBody().trace;
+    expect(trace).to.be.an("array").that.is.not.empty;
+    expect(trace.some(function (call) {
+      return call.operation_id === "getCheckoutMetrics" && call.status === 200;
+    })).to.equal(true);
+    expect(trace.every(function (call) { return call.status === 200; })).to.equal(true);
+  });
+}
+
+settings {
+  encodeUrl: false
+  timeout: 600000
+}
