@@ -1,0 +1,29 @@
+meta {
+  name: Gemma test
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/gemma/test
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{lilxApiKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "prompt": "Reply with one short sentence to confirm the model is working."
+  }
+}
+
+tests {
+  test("Gemma returns text", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().text).to.be.a("string").and.not.be.empty;
+  });
+}
