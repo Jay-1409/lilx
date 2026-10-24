@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -75,6 +77,29 @@ func TestRequestCallsApprovedBackendAndValidatesShape(t *testing.T) {
 	}
 	if result.Data["status"] != "shipped" || len(result.Trace) != 1 || result.Trace[0].OperationID != "getOrder" || backendCalls != 1 || modelCalls != 2 {
 		t.Fatalf("unexpected result: %+v, backend calls %d, model calls %d", result, backendCalls, modelCalls)
+	}
+}
+
+func TestRequestAcceptsGemmaThoughtsAndFencedJSON(t *testing.T) {
+	modelCalls := 0
+	a := testApp(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "backend.test" {
+			return response(`{"status":"shipped"}`), nil
+		}
+		modelCalls++
+		parts := []map[string]any{{"text": "```json\n{\"status\":\"shipped\"}\n```"}}
+		if modelCalls == 1 {
+			parts = []map[string]any{{"text": "I should get the order first.", "thought": true}, {"text": "```", "thought": true}, {"text": "```json\n{\"calls\":[{\"operation_id\":\"getOrder\",\"parameters\":{\"id\":\"123\"}}]}\n```"}}
+		}
+		payload, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{"content": map[string]any{"parts": parts}}}})
+		return response(string(payload)), nil
+	}))
+	r := httptest.NewRequest(http.MethodPost, "/v1/requests", strings.NewReader(`{"nlp_data_required":"Order 123 status","response_format":{"type":"object","properties":{"status":{"type":"string"}},"required":["status"]}}`))
+	r.Header.Set("Authorization", "Bearer caller-secret")
+	w := httptest.NewRecorder()
+	a.authorize(a.handleRequest)(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"status":"shipped"`) || modelCalls != 2 {
+		t.Fatalf("status %d, model calls %d: %s", w.Code, modelCalls, w.Body.String())
 	}
 }
 
@@ -159,6 +184,26 @@ func TestCallerAuthCanBeDisabled(t *testing.T) {
 	a.authorize(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("configured API key accepted request without token: %d", w.Code)
+	}
+}
+
+func TestGemmaUsesItsOwnTimeout(t *testing.T) {
+	a := testApp(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		select {
+		case <-time.After(25 * time.Millisecond):
+			return modelResponse("slow but successful"), nil
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
+	}))
+	a.client.Timeout = 5 * time.Millisecond
+	a.modelTimeout = 100 * time.Millisecond
+	answer, err := a.generate(context.Background(), "hello")
+	if err != nil || answer != "slow but successful" {
+		t.Fatalf("model call was cut off by backend timeout: %q, %v", answer, err)
+	}
+	if a.client.Timeout != 5*time.Millisecond {
+		t.Fatalf("backend timeout changed to %s", a.client.Timeout)
 	}
 }
 

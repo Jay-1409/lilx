@@ -21,15 +21,17 @@ import (
 const maxCalls = 10
 
 type app struct {
-	client      *http.Client
-	backend     *url.URL
-	operations  map[string]operation
-	model       string
-	modelURL    string
-	modelKey    string
-	backendAuth string
-	apiKey      string
-	jobs        chan backendJob
+	client       *http.Client
+	backend      *url.URL
+	operations   map[string]operation
+	model        string
+	modelURL     string
+	modelKey     string
+	modelTimeout time.Duration
+	backendAuth  string
+	apiKey       string
+	logDir       string
+	jobs         chan backendJob
 }
 
 type request struct {
@@ -69,9 +71,20 @@ func main() {
 		log.Fatal("LILX_MODEL must be an approved Gemma 4 model")
 	}
 	a := &app{client: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, backend: backend, model: model,
-		modelKey: os.Getenv("GEMINI_API_KEY"), backendAuth: os.Getenv("LILX_BACKEND_AUTHORIZATION"), apiKey: os.Getenv("LILX_API_KEY")}
+		modelKey: os.Getenv("GEMINI_API_KEY"), backendAuth: os.Getenv("LILX_BACKEND_AUTHORIZATION"), apiKey: os.Getenv("LILX_API_KEY"), logDir: os.Getenv("LILX_LOG_DIR")}
+	if a.logDir == "" {
+		a.logDir = "logs"
+	}
 	if a.modelKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
+	}
+	a.modelTimeout = 60 * time.Second
+	if value := os.Getenv("LILX_MODEL_TIMEOUT_SECONDS"); value != "" {
+		seconds, err := strconv.Atoi(value)
+		if err != nil || seconds < 1 || seconds > 300 {
+			log.Fatal("LILX_MODEL_TIMEOUT_SECONDS must be an integer from 1 to 300")
+		}
+		a.modelTimeout = time.Duration(seconds) * time.Second
 	}
 	a.operations, err = loadOperations(context.Background(), a.client, specURL, os.Getenv("LILX_OPENAPI_AUTHORIZATION"))
 	if err != nil {
@@ -94,9 +107,9 @@ func main() {
 		addr = "127.0.0.1:8080"
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/operations", a.authorize(a.listOperations))
-	mux.HandleFunc("POST /v1/requests", a.authorize(a.handleRequest))
-	mux.HandleFunc("POST /v1/gemma/test", a.authorize(a.testGemma))
+	mux.HandleFunc("GET /v1/operations", a.authorize(a.logRequest(a.listOperations)))
+	mux.HandleFunc("POST /v1/requests", a.authorize(a.logRequest(a.handleRequest)))
+	mux.HandleFunc("POST /v1/gemma/test", a.authorize(a.logRequest(a.testGemma)))
 	log.Printf("lilx listening on %s with %d approved operations and %d backend workers", addr, len(a.operations), workers)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
@@ -148,7 +161,7 @@ func (a *app) testGemma(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "prompt must be a nonempty string in a JSON body under 4 KiB", http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), a.modelCallTimeout())
 	defer cancel()
 	answer, err := a.generate(ctx, input.Prompt)
 	if err != nil {
@@ -159,7 +172,7 @@ func (a *app) testGemma(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleRequest(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 2*a.modelCallTimeout()+30*time.Second)
 	defer cancel()
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 	if err != nil {
@@ -209,7 +222,7 @@ func (a *app) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var plan struct {
 		Calls []plannedCall `json:"calls"`
 	}
-	if err := json.Unmarshal([]byte(planResponse), &plan); err != nil || len(plan.Calls) > maxCalls {
+	if err := decodeModelJSON(planResponse, &plan); err != nil || len(plan.Calls) > maxCalls {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid operation plan"})
 		return
 	}
@@ -236,7 +249,7 @@ func (a *app) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var data map[string]any
-	if err := json.Unmarshal([]byte(answer), &data); err != nil || data == nil || schema.Validate(data) != nil {
+	if err := decodeModelJSON(answer, &data); err != nil || data == nil || schema.Validate(data) != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "composed data does not match response_format", "trace": trace})
 		return
 	}
@@ -316,20 +329,28 @@ func (a *app) callBackend(ctx context.Context, op operation, params map[string]s
 	if a.backendAuth != "" {
 		req.Header.Set("Authorization", a.backendAuth)
 	}
+	logExchange(ctx, logEntry{Event: "backend_request", Method: req.Method, URL: safeLogURL(req.URL)})
 	resp, err := a.client.Do(req)
 	if err != nil {
+		logExchange(ctx, logEntry{Event: "backend_response", Error: "request failed"})
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, errors.New("upstream returned an error")
-	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
+	entry := logEntry{Event: "backend_response", Status: resp.StatusCode, Body: rawLogBody(body)}
 	if err != nil {
+		entry.Error = err.Error()
+		logExchange(ctx, entry)
 		return nil, resp.StatusCode, err
 	}
 	if len(body) > 1<<20 {
+		entry.Error = "upstream response too large; body truncated at 1 MiB"
+		logExchange(ctx, entry)
 		return nil, resp.StatusCode, errors.New("upstream response too large")
+	}
+	logExchange(ctx, entry)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, resp.StatusCode, errors.New("upstream returned an error")
 	}
 	var data any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -346,35 +367,91 @@ func (a *app) generate(ctx context.Context, prompt string) (string, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
+		logExchange(ctx, logEntry{Event: "model_response", Error: err.Error()})
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", a.modelKey)
-	resp, err := a.client.Do(req)
+	logExchange(ctx, logEntry{Event: "model_request", Method: req.Method, URL: safeLogURL(req.URL), Body: rawLogBody(body)})
+	modelClient := &http.Client{Timeout: a.modelCallTimeout(), Transport: a.client.Transport, CheckRedirect: a.client.CheckRedirect}
+	resp, err := modelClient.Do(req)
 	if err != nil {
+		message := err.Error()
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			// The request URL is already logged with credential-like query values redacted.
+			message = urlErr.Err.Error()
+		}
+		logExchange(ctx, logEntry{Event: "model_response", Error: message})
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("model returned status %d", resp.StatusCode)
-	}
 	limited, err := io.ReadAll(io.LimitReader(resp.Body, 128<<10+1))
+	entry := logEntry{Event: "model_response", Status: resp.StatusCode, Body: rawLogBody(limited)}
+	if err != nil {
+		entry.Error = err.Error()
+	} else if len(limited) > 128<<10 {
+		entry.Error = "model response too large; body truncated at 128 KiB"
+	}
 	if err != nil || len(limited) > 128<<10 {
+		logExchange(ctx, entry)
 		return "", errors.New("invalid model response")
+	}
+	if resp.StatusCode != http.StatusOK {
+		entry.Error = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(limited)))
+		logExchange(ctx, entry)
+		return "", fmt.Errorf("model returned status %d", resp.StatusCode)
 	}
 	var output struct {
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					Text string `json:"text"`
+					Text    string `json:"text"`
+					Thought bool   `json:"thought"`
 				} `json:"parts"`
 			} `json:"content"`
 		} `json:"candidates"`
 	}
-	if err := json.Unmarshal(limited, &output); err != nil || len(output.Candidates) == 0 || len(output.Candidates[0].Content.Parts) == 0 {
+	if err := json.Unmarshal(limited, &output); err != nil {
+		entry.Error = err.Error()
+		logExchange(ctx, entry)
 		return "", errors.New("invalid model response")
 	}
-	return strings.TrimSpace(output.Candidates[0].Content.Parts[0].Text), nil
+	if len(output.Candidates) == 0 {
+		entry.Error = "model response has no candidates"
+		logExchange(ctx, entry)
+		return "", errors.New("invalid model response")
+	}
+	var textParts []string
+	for _, part := range output.Candidates[0].Content.Parts {
+		if !part.Thought && strings.TrimSpace(part.Text) != "" {
+			textParts = append(textParts, part.Text)
+		}
+	}
+	if len(textParts) == 0 {
+		entry.Error = "model response has no answer text"
+		logExchange(ctx, entry)
+		return "", errors.New("invalid model response")
+	}
+	logExchange(ctx, entry)
+	return strings.TrimSpace(strings.Join(textParts, "")), nil
+}
+
+func decodeModelJSON(text string, target any) error {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```") && strings.HasSuffix(text, "```") {
+		if newline := strings.IndexByte(text, '\n'); newline >= 0 {
+			text = strings.TrimSpace(strings.TrimSuffix(text[newline+1:], "```"))
+		}
+	}
+	return json.Unmarshal([]byte(text), target)
+}
+
+func (a *app) modelCallTimeout() time.Duration {
+	if a.modelTimeout > 0 {
+		return a.modelTimeout
+	}
+	return 60 * time.Second
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
