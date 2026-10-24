@@ -54,8 +54,8 @@ body:json {
   }
 }
 
-settings {
-  timeout: 600000
+vars:pre-request {
+  baseUrl: http://localhost:8080
 }
 
 tests {
@@ -67,4 +67,9 @@ tests {
     expect(body.data.active_checkout_incidents).to.be.an("array");
     expect(body.trace).to.be.an("array").that.is.not.empty;
   });
+}
+
+settings {
+  encodeUrl: false
+  timeout: 600000
 }
