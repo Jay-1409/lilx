@@ -21,6 +21,10 @@ body:json {
   }
 }
 
+vars:pre-request {
+  baseUrl: http://localhost:8080
+}
+
 tests {
   test("Gemma returns text", function () {
     expect(res.getStatus()).to.equal(200);
