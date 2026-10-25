@@ -142,7 +142,7 @@ func TestGemmaTestEndpoint(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, "/v1/gemma/test", strings.NewReader(tc.body))
 			r.Header.Set("Authorization", "Bearer "+tc.token)
 			w := httptest.NewRecorder()
-			a.authorize(a.testGemma)(w, r)
+			a.authorize(a.testModel)(w, r)
 			if w.Code != tc.status {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
 			}
@@ -198,7 +198,7 @@ func TestGemmaUsesItsOwnTimeout(t *testing.T) {
 	}))
 	a.client.Timeout = 5 * time.Millisecond
 	a.modelTimeout = 100 * time.Millisecond
-	answer, err := a.generate(context.Background(), "hello")
+	answer, err := a.generate(context.Background(), modelInput{Prompt: "hello"})
 	if err != nil || answer != "slow but successful" {
 		t.Fatalf("model call was cut off by backend timeout: %q, %v", answer, err)
 	}
@@ -213,7 +213,7 @@ func testApp(t *testing.T, transport http.RoundTripper) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &app{client: &http.Client{Transport: transport}, backend: u, modelURL: "http://model.test", modelKey: "model-secret", backendAuth: "Bearer backend", apiKey: "caller-secret", operations: map[string]operation{"getOrder": {ID: "getOrder", Path: "/orders/{id}", Parameters: []parameter{{Name: "id", In: "path", Required: true}}}}}
+	a := &app{client: &http.Client{Transport: transport}, backend: u, model: &geminiAdapter{http: modelHTTP{client: &http.Client{Transport: transport}, provider: "gemini", model: "gemma-4-26b-a4b-it", url: "http://model.test"}, key: "model-secret"}, backendAuth: "Bearer backend", apiKey: "caller-secret", operations: map[string]operation{"getOrder": {ID: "getOrder", Path: "/orders/{id}", Parameters: []parameter{{Name: "id", In: "path", Required: true}}}}}
 	a.startWorkers(2)
 	t.Cleanup(func() { close(a.jobs) })
 	return a

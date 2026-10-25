@@ -25,15 +25,17 @@ type requestLog struct {
 }
 
 type logEntry struct {
-	Time    time.Time       `json:"time"`
-	Event   string          `json:"event"`
-	Stage   string          `json:"stage,omitempty"`
-	Attempt int             `json:"attempt,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	URL     string          `json:"url,omitempty"`
-	Status  int             `json:"status,omitempty"`
-	Body    json.RawMessage `json:"body,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	Provider string          `json:"provider,omitempty"`
+	Model    string          `json:"model,omitempty"`
+	Time     time.Time       `json:"time"`
+	Event    string          `json:"event"`
+	Stage    string          `json:"stage,omitempty"`
+	Attempt  int             `json:"attempt,omitempty"`
+	Method   string          `json:"method,omitempty"`
+	URL      string          `json:"url,omitempty"`
+	Status   int             `json:"status,omitempty"`
+	Body     json.RawMessage `json:"body,omitempty"`
+	Error    string          `json:"error,omitempty"`
 }
 
 func newRequestLog(dir string) (*requestLog, string, error) {

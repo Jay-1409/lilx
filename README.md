@@ -58,6 +58,18 @@ curl --fail-with-body http://127.0.0.1:8080/v1/requests \
 
 The second response contains `data` in the requested shape and a separate `trace`. The sample backend contains demo data only. This implementation requires `response_format` to be a JSON Schema with `type: object`; an example JSON object is not accepted as a format template.
 
+## Local Qwen with Ollama
+
+The AI provider is configurable. For a new setup, copy `.env.example` to `.env`; for an existing setup, edit its model settings:
+
+```dotenv
+LILX_AI_PROVIDER="ollama"
+LILX_MODEL="qwen3.5:4b"
+LILX_OLLAMA_URL="http://127.0.0.1:11434"
+```
+
+Start Ollama, run `ollama pull qwen3.5:4b`, and then run `./start.sh` with the backend already running. No Google key is required for Ollama. Test either provider through `POST /v1/gemma/test` with `{"prompt":"Reply with one short sentence."}`. Gemini remains the default provider.
+
 ## Documentation
 
 - [API and configuration](./docs/api.md)

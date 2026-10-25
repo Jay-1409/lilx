@@ -66,7 +66,7 @@ The service makes at most ten backend calls per request. It accepts documented i
 
 ## `POST /v1/gemma/test`
 
-Check the configured Gemma model. This endpoint requires the same bearer token as the others when `LILX_API_KEY` is set.
+Check the configured AI adapter and model. The existing endpoint uses the adapter selected in `.env`. This endpoint requires the same bearer token as the others when `LILX_API_KEY` is set.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -81,7 +81,7 @@ curl --fail-with-body http://127.0.0.1:8080/v1/gemma/test \
 Success, `200 OK`:
 
 ```json
-{"text":"Hello from Gemma."}
+{"text":"Hello from the model."}
 ```
 
 Invalid input returns `400` plain text. A model failure returns `502` with `{"error":"model request failed"}`. Authentication and logging errors return `401` and `500` as above.
@@ -93,14 +93,40 @@ Invalid input returns `400` plain text. A model failure returns `502` with `{"er
 | `LILX_BACKEND_URL` | Required backend base HTTP(S) URL. |
 | `LILX_OPENAPI_URL` | Required OpenAPI 3.x JSON or YAML URL. |
 | `LILX_ALLOWED_OPERATIONS` | Required list of approved IDs, or `*`. |
-| `GEMINI_API_KEY` | Required server-side Google Generative Language key. |
+| `GEMINI_API_KEY` | Server-side Google key; required only for `gemini`. Never sent to Ollama. |
 | `LILX_API_KEY` | Optional caller bearer token. |
 | `LILX_BACKEND_AUTHORIZATION` | Optional complete backend `Authorization` header. |
 | `LILX_OPENAPI_AUTHORIZATION` | Optional complete `Authorization` header for the specification request. |
-| `LILX_MODEL` | `gemma-4-26b-a4b-it` by default; `gemma-4-31b-it` is also allowed. |
+| `LILX_AI_PROVIDER` | `gemini` (default) or `ollama`. Unknown values fail startup. |
+| `LILX_MODEL` | Gemini: `gemma-4-26b-a4b-it` (default) or `gemma-4-31b-it`. Ollama: installed model tag, default `qwen3.5:4b`. |
+| `LILX_OLLAMA_URL` | Ollama base URL, default `http://127.0.0.1:11434`. HTTP(S), without credentials, query, or fragment. |
 | `LILX_MODEL_TIMEOUT_SECONDS` | Model call timeout, default `600` (10 minutes), range `1`–`600`; also bounded by the full request deadline. |
 | `LILX_WORKERS` | Shared backend call workers, default `10`, range `1`–`100`. |
 | `LILX_LOG_DIR` | Request log directory, default `logs`. |
 | `LILX_LISTEN_ADDR` | Listen address, default `127.0.0.1:8080`. |
 
-Each authorized request writes a JSONL log named by its `X-Lilx-Request-ID` response header. Logs include client, backend, and model request and response bodies. Validation failures produce `model_validation_error` entries with the stage, attempt, and exact validation error. Server error retries produce `model_retry` entries. Authorization headers and credential-like URL query parameters are omitted or redacted, but prompts and raw backend data remain in the logs. Keep the log directory private and delete records when no longer needed. Log files use mode `0600`; the default directory is ignored by Git.
+Each authorized request writes a JSONL log named by its `X-Lilx-Request-ID` response header. Logs include client, backend, and model request and response bodies. Model exchanges include `provider` and `model`, and record exact HTTP, connection, and response decoding errors for either adapter. Validation failures produce `model_validation_error` entries with the stage, attempt, and exact validation error. Server error retries produce `model_retry` entries. Authorization headers and credential-like URL query parameters are omitted or redacted, but prompts and raw backend data remain in the logs. Keep the log directory private and delete records when no longer needed. Log files use mode `0600`; the default directory is ignored by Git.
+
+## Choosing an AI adapter
+
+Copy `.env.example` to `.env` for a new setup; preserve an existing `.env` and its credentials. `./start.sh` loads this file. Restart lilx after changing the provider or model.
+
+For Gemini:
+
+```dotenv
+LILX_AI_PROVIDER="gemini"
+LILX_MODEL="gemma-4-26b-a4b-it"
+GEMINI_API_KEY="your-google-api-key"
+```
+
+For local Qwen, first start Ollama and install the model with `ollama pull qwen3.5:4b`, then set:
+
+```dotenv
+LILX_AI_PROVIDER="ollama"
+LILX_MODEL="qwen3.5:4b"
+LILX_OLLAMA_URL="http://127.0.0.1:11434"
+```
+
+Set both provider and model when switching an existing configuration. Gemini credentials can remain in `.env`; Ollama does not use them. Model selection is server configuration, not caller input. There is no automatic fallback between providers.
+
+The Ollama adapter uses [`POST /api/chat`](https://docs.ollama.com/api/chat) with `stream: false`, `think: false`, temperature `0`, and a JSON Schema in `format` for planning and composition. The plain-text model test omits `format`. Use models that support these options; Qwen3.5 is the default. Gemini keeps the schema in its prompt. Both adapters use the same Go validation, permissions, retries, and timeouts.
