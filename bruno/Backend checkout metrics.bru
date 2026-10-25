@@ -1,0 +1,29 @@
+meta {
+  name: Backend checkout metrics
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{backendUrl}}/metrics/checkout
+  body: none
+  auth: none
+}
+
+vars:pre-request {
+  backendUrl: http://localhost:9000
+}
+
+tests {
+  test("Returns checkout metrics directly from the test backend", function () {
+    expect(res.getStatus()).to.equal(200);
+    const metrics = res.getBody();
+    expect(metrics.total_orders).to.be.a("number");
+    expect(metrics.failed_orders).to.be.a("number");
+    expect(metrics.order_error_rate_percent).to.be.a("number");
+  });
+}
+
+docs {
+  Start test-backend/server.js, then send this request. Bruno shows the response time for the direct backend call. Compare it with the Checkout metrics request, which includes lilx planning and composition.
+}

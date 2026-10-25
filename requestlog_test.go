@@ -108,7 +108,7 @@ func TestGemmaErrorsAreLoggedExactly(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, "/v1/gemma/test", strings.NewReader(`{"prompt":"hello"}`))
 			r.Header.Set("Authorization", "Bearer caller-secret")
 			w := httptest.NewRecorder()
-			a.authorize(a.logRequest(a.testGemma))(w, r)
+			a.authorize(a.logRequest(a.testModel))(w, r)
 			if w.Code != http.StatusBadGateway {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
 			}

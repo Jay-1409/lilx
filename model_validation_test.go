@@ -38,7 +38,7 @@ func TestModelServerErrorsHaveBoundedRetries(t *testing.T) {
 				r.StatusCode = status
 				return r, nil
 			}))
-			err := a.generateValidated(context.Background(), "planning", "return JSON", func(answer string) error {
+			err := a.generateValidated(context.Background(), "planning", modelInput{Prompt: "return JSON"}, func(answer string) error {
 				var result map[string]any
 				return decodeModelJSON(answer, &result)
 			})

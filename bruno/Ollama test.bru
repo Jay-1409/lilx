@@ -1,0 +1,45 @@
+meta {
+  name: Ollama test
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/ollama/test
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{lilxApiKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "prompt": "Reply with one short sentence to confirm the model is working."
+  }
+}
+
+vars:pre-request {
+  baseUrl: http://localhost:8080
+}
+
+tests {
+  test("Ollama returns text", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().text).to.be.a("string").and.not.be.empty;
+  });
+}
+
+settings {
+  encodeUrl: false
+  timeout: 600000
+}
+
+docs {
+  Set LILX_AI_PROVIDER="ollama" and LILX_MODEL="qwen3.5:4b" in the server .env, then restart lilx.
+  Start Ollama and install the configured model before running this request.
+  If caller authentication is enabled, set lilxApiKey to the server LILX_API_KEY.
+  A 409 response means lilx is configured with a different AI adapter.
+}

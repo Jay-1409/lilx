@@ -1,7 +1,7 @@
 meta {
   name: Checkout metrics
   type: http
-  seq: 3
+  seq: 4
 }
 
 post {
@@ -39,7 +39,7 @@ tests {
   test("Returns HTTP 200", function () {
     expect(res.getStatus()).to.equal(200);
   });
-
+  
   test("Matches the bundled sample backend metrics", function () {
     expect(res.getBody().data).to.deep.equal({
       total_orders: 4,
@@ -47,7 +47,7 @@ tests {
       order_error_rate_percent: 50
     });
   });
-
+  
   test("Successfully calls the checkout metrics API", function () {
     const trace = res.getBody().trace;
     expect(trace).to.be.an("array").that.is.not.empty;

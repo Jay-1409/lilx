@@ -43,12 +43,14 @@ The product should make it clear when no available API can answer a field, an up
 
 ## AI model calls
 
-Use the Google Generative Language `generateContent` endpoint for every AI inference in lilx, including request interpretation, API selection, data extraction, and response composition. The allowed Gemma 4 model IDs are:
+Route every AI inference through the configured model adapter. The supported providers are Gemini (default) and local Ollama, selected with `LILX_AI_PROVIDER`. Keep planning, validation, access rules, retries, and execution limits shared across providers.
+
+The Gemini adapter uses the Google Generative Language `generateContent` endpoint. Its allowed Gemma 4 model IDs are:
 
 - `gemma-4-31b-it`
 - `gemma-4-26b-a4b-it`
 
-Do not introduce another AI model or provider unless this product decision changes. The example below uses `gemma-4-26b-a4b-it`; replace that model ID with `gemma-4-31b-it` when that model is selected.
+The Ollama adapter uses `/api/chat`, defaults to `qwen3.5:4b`, and accepts an installed model tag through `LILX_MODEL`. Local model support is an approved product decision. New providers should implement the same adapter interface without changing orchestration or bypassing validation. The example below uses `gemma-4-26b-a4b-it`; replace that model ID with `gemma-4-31b-it` when that model is selected.
 
 ```bash
 curl "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent" \
