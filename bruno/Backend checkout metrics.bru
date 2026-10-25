@@ -10,6 +10,10 @@ get {
   auth: none
 }
 
+vars:pre-request {
+  backendUrl: http://localhost:9000
+}
+
 tests {
   test("Returns checkout metrics directly from the test backend", function () {
     expect(res.getStatus()).to.equal(200);
