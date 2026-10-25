@@ -86,6 +86,20 @@ Success, `200 OK`:
 
 Invalid input returns `400` plain text. A model failure returns `502` with `{"error":"model request failed"}`. Authentication and logging errors return `401` and `500` as above.
 
+## `POST /v1/ollama/test`
+
+Test the local Ollama adapter using the same `{"prompt":"Reply with one short sentence."}` body and `{"text":"..."}` response as the model test above. Set `LILX_AI_PROVIDER="ollama"` and `LILX_MODEL="qwen3.5:4b"` in `.env`, start Ollama with that model installed, and restart lilx. The endpoint uses the same caller authentication, logging, input limits, and model timeout.
+
+If another adapter is selected, it returns `409` with an explanation and makes no model call. Other statuses match `/v1/gemma/test`.
+
+Use **Ollama test** in the Bruno collection, or:
+
+```sh
+curl --fail-with-body http://127.0.0.1:8080/v1/ollama/test \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Reply with one short sentence."}'
+```
+
 ## Server settings
 
 | Variable | Purpose |
@@ -129,4 +143,4 @@ LILX_OLLAMA_URL="http://127.0.0.1:11434"
 
 Set both provider and model when switching an existing configuration. Gemini credentials can remain in `.env`; Ollama does not use them. Model selection is server configuration, not caller input. There is no automatic fallback between providers.
 
-The Ollama adapter uses [`POST /api/chat`](https://docs.ollama.com/api/chat) with `stream: false`, `think: false`, temperature `0`, and a JSON Schema in `format` for planning and composition. The plain-text model test omits `format`. Use models that support these options; Qwen3.5 is the default. Gemini keeps the schema in its prompt. Both adapters use the same Go validation, permissions, retries, and timeouts.
+The Ollama adapter uses [`POST /api/chat`](https://docs.ollama.com/api/chat) with `stream: false`, `think: false`, temperature `0`, and a JSON Schema in `format` for planning and composition. It keeps the model loaded for 30 minutes after each call to avoid reload delays, using local memory during that period. The plain-text model test omits `format`. Use models that support these options; Qwen3.5 is the default. Gemini keeps the schema in its prompt. Both adapters use the same Go validation, permissions, retries, and timeouts.

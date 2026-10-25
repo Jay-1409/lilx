@@ -101,6 +101,7 @@ func main() {
 	mux.HandleFunc("GET /v1/operations", a.authorize(a.logRequest(a.listOperations)))
 	mux.HandleFunc("POST /v1/requests", a.authorize(a.logRequest(a.handleRequest)))
 	mux.HandleFunc("POST /v1/gemma/test", a.authorize(a.logRequest(a.testModel)))
+	mux.HandleFunc("POST /v1/ollama/test", a.authorize(a.logRequest(a.testOllama)))
 	log.Printf("lilx listening on %s with %d approved operations and %d backend workers", addr, len(a.operations), workers)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
@@ -137,6 +138,14 @@ func approvedOperations(available map[string]operation, allowed string) (map[str
 
 func (a *app) listOperations(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"operations": sortedOperations(a.operations)})
+}
+
+func (a *app) testOllama(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.model.(*ollamaAdapter); !ok {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "set LILX_AI_PROVIDER=ollama and restart lilx to test Ollama"})
+		return
+	}
+	a.testModel(w, r)
 }
 
 func (a *app) testModel(w http.ResponseWriter, r *http.Request) {

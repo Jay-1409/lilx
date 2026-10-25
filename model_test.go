@@ -70,16 +70,17 @@ func TestOllamaRequestPipeline(t *testing.T) {
 					t.Fatalf("unexpected Ollama request or leaked credentials: %s %s", r.Method, r.URL)
 				}
 				var payload struct {
-					Model    string                           `json:"model"`
-					Stream   *bool                            `json:"stream"`
-					Think    *bool                            `json:"think"`
-					Messages []struct{ Role, Content string } `json:"messages"`
-					Format   json.RawMessage                  `json:"format"`
+					Model     string                           `json:"model"`
+					KeepAlive string                           `json:"keep_alive"`
+					Stream    *bool                            `json:"stream"`
+					Think     *bool                            `json:"think"`
+					Messages  []struct{ Role, Content string } `json:"messages"`
+					Format    json.RawMessage                  `json:"format"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 					t.Fatal(err)
 				}
-				if payload.Model != "qwen3.5:4b" || payload.Stream == nil || *payload.Stream || payload.Think == nil || *payload.Think || len(payload.Messages) != 1 || payload.Messages[0].Role != "user" {
+				if payload.Model != "qwen3.5:4b" || payload.KeepAlive != "30m" || payload.Stream == nil || *payload.Stream || payload.Think == nil || *payload.Think || len(payload.Messages) != 1 || payload.Messages[0].Role != "user" {
 					t.Fatalf("bad Ollama payload: %+v", payload)
 				}
 				answer := `{"status":"shipped"}`
@@ -158,6 +159,49 @@ func TestOllamaResponseErrorsAndPlainText(t *testing.T) {
 	answer, err := adapter.Generate(context.Background(), modelInput{Prompt: "hello"})
 	if err != nil || answer != "hello" {
 		t.Fatalf("plain text: %q, %v", answer, err)
+	}
+}
+
+func TestOllamaTestEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, token, body           string
+		upstreamStatus, wantStatus, wantCalls int
+	}{
+		{"success", "ollama", "caller-secret", `{"prompt":"Hello"}`, 200, 200, 1},
+		{"wrong adapter", "gemini", "caller-secret", `{"prompt":"Hello"}`, 200, 409, 0},
+		{"unauthorized", "ollama", "wrong", `{"prompt":"Hello"}`, 200, 401, 0},
+		{"empty prompt", "ollama", "caller-secret", `{"prompt":" "}`, 200, 400, 0},
+		{"upstream failure", "ollama", "caller-secret", `{"prompt":"Hello"}`, 503, 502, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			adapter, err := newModelAdapter(tc.provider, "", "secret", "", roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				if r.URL.Path != "/api/chat" || r.Header.Get("x-goog-api-key") != "" {
+					t.Fatalf("unexpected model call: %s", r.URL)
+				}
+				resp := response(`{"done":true,"message":{"content":"Hello from Ollama"}}`)
+				resp.StatusCode = tc.upstreamStatus
+				return resp, nil
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := &app{model: adapter, apiKey: "caller-secret", logDir: t.TempDir()}
+			r := httptest.NewRequest(http.MethodPost, "/v1/ollama/test", strings.NewReader(tc.body))
+			r.Header.Set("Authorization", "Bearer "+tc.token)
+			w := httptest.NewRecorder()
+			a.authorize(a.logRequest(a.testOllama))(w, r)
+			if w.Code != tc.wantStatus || calls != tc.wantCalls {
+				t.Fatalf("status %d, calls %d: %s", w.Code, calls, w.Body)
+			}
+			if w.Code == 200 && !strings.Contains(w.Body.String(), `"text":"Hello from Ollama"`) {
+				t.Fatalf("unexpected response: %s", w.Body)
+			}
+			if w.Code != 401 && w.Header().Get("X-Lilx-Request-ID") == "" {
+				t.Fatal("missing request log ID")
+			}
+		})
 	}
 }
 

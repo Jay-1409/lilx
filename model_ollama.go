@@ -11,11 +11,12 @@ type ollamaAdapter struct{ http modelHTTP }
 
 func (o *ollamaAdapter) Generate(ctx context.Context, input modelInput) (string, error) {
 	body := map[string]any{
-		"model":    o.http.model,
-		"messages": []any{map[string]string{"role": "user", "content": input.Prompt}},
-		"stream":   false,
-		"think":    false,
-		"options":  map[string]any{"temperature": 0},
+		"model":      o.http.model,
+		"messages":   []any{map[string]string{"role": "user", "content": input.Prompt}},
+		"stream":     false,
+		"think":      false,
+		"keep_alive": "30m",
+		"options":    map[string]any{"temperature": 0},
 	}
 	if len(input.Schema) > 0 {
 		body["format"] = input.Schema
